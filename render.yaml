@@ -34,5 +34,4 @@ services:
 databases:
   - name: health-db
     databaseName: healthagent
-    user: postgres
     plan: free
