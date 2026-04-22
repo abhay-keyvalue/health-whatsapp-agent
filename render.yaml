@@ -1,0 +1,38 @@
+services:
+  # Frontend Static Site
+  - type: web
+    name: health-frontend
+    env: static
+    rootDir: admin-dashboard
+    buildCommand: npm install && npm run build
+    staticPublishPath: dist
+    pullRequestPreviewsEnabled: true
+
+  # Backend Web Service
+  - type: web
+    name: health-backend
+    env: node
+    rootDir: backend
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: PORT
+        value: "3000"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: health-db
+          property: connectionString
+      - key: TWILIO_ACCOUNT_SID
+        sync: false
+      - key: TWILIO_AUTH_TOKEN
+        sync: false
+      - key: TWILIO_WHATSAPP_NUMBER
+        sync: false
+      - key: GROK_API_KEY
+        sync: false
+
+databases:
+  - name: health-db
+    databaseName: healthagent
+    user: postgres
+    plan: free

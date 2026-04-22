@@ -1,0 +1,15 @@
+{
+  "name": "health-whatsapp-agent-root",
+  "version": "1.0.0",
+  "description": "Root package to manage backend and admin-dashboard",
+  "scripts": {
+    "install:all": "npm install --prefix backend && npm install --prefix admin-dashboard",
+    "start": "concurrently \"npm start --prefix backend\" \"npm run dev --prefix admin-dashboard\"",
+    "dev": "concurrently \"npm start --prefix backend\" \"npm run dev --prefix admin-dashboard\"",
+    "start:backend": "npm start --prefix backend",
+    "start:frontend": "npm run dev --prefix admin-dashboard"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

@@ -1,0 +1,53 @@
+name: Deploy to Render
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  ci-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+          
+      - name: Install dependencies (Backend)
+        run: npm install
+        working-directory: ./backend
+        
+      - name: Install dependencies (Frontend)
+        run: npm install
+        working-directory: ./admin-dashboard
+
+      - name: Build Frontend
+        run: npm run build
+        working-directory: ./admin-dashboard
+
+  deploy:
+    needs: ci-check
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Trigger Backend Deployment
+        run: |
+          if [ -n "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}" ]; then
+            curl -X POST "${{ secrets.RENDER_BACKEND_DEPLOY_HOOK }}"
+            echo "Backend deployment triggered."
+          else
+            echo "RENDER_BACKEND_DEPLOY_HOOK secret is not set. Skipping."
+          fi
+
+      - name: Trigger Frontend Deployment
+        run: |
+          if [ -n "${{ secrets.RENDER_FRONTEND_DEPLOY_HOOK }}" ]; then
+            curl -X POST "${{ secrets.RENDER_FRONTEND_DEPLOY_HOOK }}"
+            echo "Frontend deployment triggered."
+          else
+            echo "RENDER_FRONTEND_DEPLOY_HOOK secret is not set. Skipping."
+          fi
