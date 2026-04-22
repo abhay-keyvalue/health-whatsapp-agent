@@ -1,0 +1,40 @@
+# Health WhatsApp Agent
+
+This project contains the complete infrastructure for your Health WhatsApp agent:
+1. Node.js Backend Server (`/backend`)
+2. React Admin Dashboard (`/admin-dashboard`)
+
+## 1. Backend Setup
+
+The backend handles the Twilio webhook, Postgres DB logic, Flow Engine, Grok integration, and Safety rules.
+
+1. Navigate to `/backend`.
+2. Edit the `.env` file to include your actual Twilio and Grok credentials:
+   - \`TWILIO_ACCOUNT_SID\`
+   - \`TWILIO_AUTH_TOKEN\`
+   - \`GROK_API_KEY\`
+   - \`DATABASE_URL\` (Update this to point to a running postgres instance)
+3. Make sure PostgreSQL is running on your machine.
+4. Run \`npm install\` then \`node server.js\`.
+5. The database tables (\`users\`, \`messages\`, \`escalations\`) will automatically initialize.
+6. Ngrok Setup: Use \`ngrok http 3000\` to expose the local server, and set your Twilio WhatsApp Sender webhook URL to \`https://<your-ngrok-url>.ngrok-free.app/api/webhook\`.
+
+### Architecture Flow:
+1. **Flow Engine**: Triggers for states like \`medication_reminder\` overriding LLM.
+2. **Intent Classifier**: Automatically detects Emergency or Questions.
+3. **LLM Engine**: Uses Grok's API (via openai sdk standard wrapper) mapped to \`api.x.ai/v1\`. Pre-prompted to act as a warm health EA.
+4. **Safety Rule Engine**: Catches keywords like 'emergency' and 'blood' generated in the LLM response, replacing it with a safe fallback and triggering an escalation in the DB.
+
+## 2. Admin Dashboard Setup
+
+The dashboard provides a premium interface to monitor the fleet of members, active escalations, and messaging history.
+
+1. Navigate to \`/admin-dashboard\`.
+2. Run \`npm start\` or \`npm run dev\` depending on the vite setup to start the Vite UI.
+3. By default, it connects to mock data for demonstration. You can edit the \`axios\` calls in \`Dashboard.jsx\` and \`UsersList.jsx\` to hit \`http://localhost:3000/api/...\` when your API is populated!
+
+Features deployed:
+- Premium Glassmorphism modern UI mapping.
+- Dashboard with active counters and escalation table.
+- Users monitoring list.
+- Chronological chat history context window for manual escalation review.
