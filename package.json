@@ -4,6 +4,8 @@
   "description": "Root package to manage backend and admin-dashboard",
   "scripts": {
     "install:all": "npm install --prefix backend && npm install --prefix admin-dashboard",
+    "docker:up": "docker compose up -d --build",
+    "docker:down": "docker compose down",
     "start": "concurrently \"npm start --prefix backend\" \"npm run dev --prefix admin-dashboard\"",
     "dev": "concurrently \"npm start --prefix backend\" \"npm run dev --prefix admin-dashboard\"",
     "start:backend": "npm start --prefix backend",
