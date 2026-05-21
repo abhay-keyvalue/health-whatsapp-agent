@@ -29,6 +29,10 @@ dist-ssr
 .env.production
 .env.local
 
+# uploads
+backend/uploads/*
+!backend/uploads/.gitkeep
+
 # docker
 .docker
 *.pem

@@ -1,6 +1,8 @@
 const express = require('express');
 const cors = require('cors');
 const twilio = require('twilio');
+const multer = require('multer');
+const path = require('path');
 const { pool, initDB } = require('./db');
 const { classifyIntent, generateResponse } = require('./llm');
 const { checkSafety } = require('./safetyRules');
@@ -10,6 +12,36 @@ const app = express();
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
+
+// Serve uploaded files statically
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// Configure multer for video uploads
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, path.join(__dirname, 'uploads'));
+  },
+  filename: (req, file, cb) => {
+    const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+    cb(null, 'video-' + uniqueSuffix + path.extname(file.originalname));
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: { fileSize: 16 * 1024 * 1024 }, // 16MB limit (Twilio's limit)
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /mp4|mov|avi|3gp|mkv/;
+    const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    } else {
+      cb(new Error('Only video files are allowed (mp4, mov, avi, 3gp, mkv)'));
+    }
+  }
+});
 
 // Initialize Twilio client
 const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
@@ -171,6 +203,60 @@ app.post('/api/users/:id/messages', async (req, res) => {
         res.json(messageResult.rows[0]);
     } catch (e) {
         console.error('Error sending message:', e);
+        res.status(500).json({error: "Server Error"});
+    }
+});
+
+// Send video from admin to user
+app.post('/api/users/:id/video', upload.single('video'), async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const { caption } = req.body;
+        
+        if (!req.file) {
+            return res.status(400).json({error: "Video file is required"});
+        }
+
+        // Get user info
+        const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({error: "User not found"});
+        }
+        
+        const user = userResult.rows[0];
+        
+        // Build public URL for the video - use PUBLIC_URL from env or fallback to request host
+        const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
+        const videoUrl = `${baseUrl}/uploads/${req.file.filename}`;
+        
+        // Log the message in database with video info
+        const messageBody = caption ? `[Video] ${caption}` : '[Video]';
+        const messageResult = await pool.query(
+            'INSERT INTO messages (user_id, sender, body) VALUES ($1, $2, $3) RETURNING *',
+            [userId, 'admin', messageBody]
+        );
+        
+        // Send via Twilio WhatsApp with video
+        try {
+            if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+                await client.messages.create({
+                    body: caption || 'Video message',
+                    mediaUrl: [videoUrl],
+                    from: process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886',
+                    to: user.phone_number
+                });
+            }
+        } catch (twilioErr) {
+            console.error('Twilio error sending video:', twilioErr);
+            // Continue even if WhatsApp sending fails - message is saved in DB
+        }
+        
+        res.json({
+            ...messageResult.rows[0],
+            videoUrl: videoUrl
+        });
+    } catch (e) {
+        console.error('Error sending video:', e);
         res.status(500).json({error: "Server Error"});
     }
 });
