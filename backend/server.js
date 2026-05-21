@@ -89,6 +89,7 @@ app.post('/api/webhook', async (req, res) => {
         
         // Log webhook for debugging
         console.log('WATI webhook received:', { waId, type, eventType, text: text?.substring(0, 50), hasData: !!data });
+        console.log('WATI webhook full payload:', JSON.stringify(req.body, null, 2)); // DEBUG
         
         // Only process message received events
         if (eventType !== 'message') {
@@ -338,6 +339,55 @@ app.post('/api/users/:id/video', upload.single('video'), async (req, res) => {
         });
     } catch (e) {
         console.error('Error sending video:', e);
+        res.status(500).json({error: "Server Error"});
+    }
+});
+
+// Send welcome template message to a new user (for first contact)
+app.post('/api/users/welcome', async (req, res) => {
+    try {
+        const { phoneNumber, templateName } = req.body;
+        
+        if (!phoneNumber) {
+            return res.status(400).json({error: "Phone number is required"});
+        }
+        
+        // Default template name if not provided
+        const template = templateName || 'welcome_message';
+        
+        // Ensure user exists in database
+        const user = await getUser(`whatsapp:${phoneNumber}`);
+        
+        // Send template message via WATI
+        try {
+            if (watiClient.isConfigured()) {
+                const waId = toWaId(`whatsapp:${phoneNumber}`);
+                const result = await watiClient.sendTemplateMessage(waId, template);
+                
+                // Log the welcome message in database
+                await pool.query(
+                    'INSERT INTO messages (user_id, sender, body) VALUES ($1, $2, $3)',
+                    [user.id, 'admin', `[Template: ${template}] Welcome message sent`]
+                );
+                
+                res.json({
+                    success: true,
+                    message: 'Welcome message sent',
+                    templateName: template,
+                    user: user
+                });
+            } else {
+                return res.status(500).json({error: 'WATI client not configured'});
+            }
+        } catch (watiErr) {
+            console.error('WATI error sending welcome template:', watiErr);
+            return res.status(500).json({
+                error: 'Failed to send welcome message',
+                details: watiErr.message
+            });
+        }
+    } catch (e) {
+        console.error('Error sending welcome message:', e);
         res.status(500).json({error: "Server Error"});
     }
 });

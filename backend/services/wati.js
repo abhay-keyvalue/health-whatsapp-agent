@@ -54,6 +54,7 @@ class WATIClient {
             const response = await this.client.post(endpoint, payload);
             
             console.log(`WATI message sent to ${waId}: ${response.data?.whatsappMessageId || 'success'}`);
+            console.log('WATI API full response:', JSON.stringify(response.data, null, 2)); // DEBUG
             return response.data;
         } catch (error) {
             console.error('WATI sendSessionMessage error:', {
@@ -63,6 +64,45 @@ class WATIClient {
                 status: error.response?.status
             });
             throw new Error(`Failed to send WATI message: ${error.message}`);
+        }
+    }
+    
+    /**
+     * Send a WhatsApp Template Message (for first contact or after 24h window)
+     * @param {string} waId - Recipient WhatsApp ID (digits only, e.g., "919876543210")
+     * @param {string} templateName - Name of approved template in WATI dashboard
+     * @param {Array} parameters - Optional array of parameters for template variables
+     * @param {string} broadcastName - Optional broadcast campaign name
+     * @returns {Promise<Object>} - API response
+     */
+    async sendTemplateMessage(waId, templateName, parameters = [], broadcastName = 'API Broadcast') {
+        try {
+            const endpoint = `/api/v1/sendTemplateMessage`;
+            
+            const payload = {
+                template_name: templateName,
+                broadcast_name: broadcastName,
+                parameters: parameters
+            };
+            
+            const response = await this.client.post(endpoint, payload, {
+                params: {
+                    whatsappNumber: waId
+                }
+            });
+            
+            console.log(`WATI template message sent to ${waId}: ${templateName}`);
+            console.log('WATI template API response:', JSON.stringify(response.data, null, 2));
+            return response.data;
+        } catch (error) {
+            console.error('WATI sendTemplateMessage error:', {
+                waId,
+                templateName,
+                message: error.message,
+                response: error.response?.data,
+                status: error.response?.status
+            });
+            throw new Error(`Failed to send WATI template message: ${error.message}`);
         }
     }
     

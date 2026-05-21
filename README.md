@@ -10,7 +10,8 @@ The backend handles the WATI webhook, Postgres DB logic, Flow Engine, Grok integ
 
 1. Navigate to `/backend`.
 2. **Set up WATI account** - See [WATI_SETUP.md](WATI_SETUP.md) for detailed instructions
-3. Edit the `.env` file to include your actual WATI and Grok credentials:
+3. **Send first welcome message** - See [WELCOME_MESSAGE_GUIDE.md](WELCOME_MESSAGE_GUIDE.md) to initiate conversations with new users
+4. Edit the `.env` file to include your actual WATI and Grok credentials:
    - `WATI_API_BASE_URL`
    - `WATI_API_TOKEN`
    - `WATI_TENANT_ID`
