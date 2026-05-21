@@ -1,12 +1,13 @@
 const express = require('express');
 const cors = require('cors');
-const twilio = require('twilio');
 const multer = require('multer');
 const path = require('path');
 const { pool, initDB } = require('./db');
 const { classifyIntent, generateResponse } = require('./llm');
 const { checkSafety } = require('./safetyRules');
 const { handleFlowEngine } = require('./flowEngine');
+const watiClient = require('./services/wati');
+const { toWaId, fromWaId } = require('./utils/phone');
 
 const app = express();
 app.use(cors());
@@ -29,7 +30,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({
   storage: storage,
-  limits: { fileSize: 16 * 1024 * 1024 }, // 16MB limit (Twilio's limit)
+  limits: { fileSize: 16 * 1024 * 1024 }, // 16MB limit (WhatsApp's limit)
   fileFilter: (req, file, cb) => {
     const allowedTypes = /mp4|mov|avi|3gp|mkv/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -43,9 +44,6 @@ const upload = multer({
   }
 });
 
-// Initialize Twilio client
-const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-
 async function getUser(phoneNumber) {
   const res = await pool.query('SELECT * FROM users WHERE phone_number = $1', [phoneNumber]);
   if (res.rows.length === 0) {
@@ -58,10 +56,10 @@ async function getUser(phoneNumber) {
   return res.rows[0];
 }
 
-async function logMessage(userId, sender, body) {
+async function logMessage(userId, sender, body, mediaUrl = null, mediaType = null) {
    await pool.query(
-       'INSERT INTO messages (user_id, sender, body) VALUES ($1, $2, $3)',
-       [userId, sender, body]
+       'INSERT INTO messages (user_id, sender, body, media_url, media_type) VALUES ($1, $2, $3, $4, $5)',
+       [userId, sender, body, mediaUrl, mediaType]
    );
 }
 
@@ -72,60 +70,142 @@ async function triggerEscalation(userId, reason) {
     );
 }
 
-// Webhook for Twilio WhatsApp incoming messages
+// Webhook for WATI WhatsApp incoming messages
 app.post('/api/webhook', async (req, res) => {
-    const incomingMessage = req.body.Body;
-    const from = req.body.From; // e.g. "whatsapp:+12345678"
-
-    const twiml = new twilio.twiml.MessagingResponse();
-    let finalResponse = "";
-
     try {
-        const user = await getUser(from);
-        await logMessage(user.id, 'user', incomingMessage);
-
-        // 1. Check if user is in an active Flow
-        let flowResult = null;
-        if (user.active_flow) {
-            flowResult = handleFlowEngine(user, incomingMessage);
+        // Respond 200 immediately (WATI expects fast ack)
+        res.status(200).json({ success: true });
+        
+        // Parse WATI webhook payload
+        const { 
+            waId,           // WhatsApp ID (sender's phone number, digits only)
+            text,           // Message text
+            type,           // Message type: text, image, video, document, audio, etc.
+            senderName,     // Display name of sender
+            data,           // Additional data for media messages (contains fileName)
+            whatsappMessageId,
+            eventType
+        } = req.body;
+        
+        // Log webhook for debugging
+        console.log('WATI webhook received:', { waId, type, eventType, text: text?.substring(0, 50), hasData: !!data });
+        
+        // Only process message received events
+        if (eventType !== 'message') {
+            console.log('Skipping non-message event');
+            return;
         }
+        
+        const phoneNumber = fromWaId(waId); // Convert to DB format: whatsapp:+919...
+        let incomingMessage = text || '';
+        let mediaUrl = null;
+        let mediaType = null;
 
-        if (flowResult) {
-            finalResponse = flowResult.nextMessage;
-            if (flowResult.clearFlow) {
-                await pool.query("UPDATE users SET active_flow = NULL WHERE id = $1", [user.id]);
-            }
-        } else {
-            // 2. Classify intent if no active flow handled it
-            const intent = await classifyIntent(incomingMessage);
+        try {
+            const user = await getUser(phoneNumber);
             
-            if (intent.includes("EMERGENCY") || incomingMessage.toLowerCase().includes("emergency")) {
-                finalResponse = "This sounds like a critical situation. I am immediately alerting the clinician team. Please seek physical emergency care immediately.";
-                await triggerEscalation(user.id, `Emergency triggered by user message: ${incomingMessage}`);
-            } else {
-                // 3. Free-Form Query -> LLM
-                const llmResponse = await generateResponse(`User phone: ${from}`, incomingMessage);
+            // Handle media messages (image, video, document, audio, voice)
+            const mediaTypes = ['image', 'video', 'document', 'audio', 'voice', 'sticker'];
+            if (mediaTypes.includes(type) && data?.fileName) {
+                console.log(`Processing ${type} message with fileName: ${data.fileName}`);
                 
-                // 4. Safety Post-Processing
-                const safetyResult = checkSafety(llmResponse);
-
-                if (!safetyResult.safe) {
-                    finalResponse = safetyResult.fallbackMessage;
-                    await triggerEscalation(user.id, safetyResult.escalationReason);
-                } else {
-                    finalResponse = llmResponse;
+                try {
+                    // Download media from WATI
+                    const mediaBuffer = await watiClient.getMedia(data.fileName);
+                    
+                    // Determine file extension from fileName or type
+                    const originalExt = path.extname(data.fileName);
+                    const ext = originalExt || (type === 'image' ? '.jpg' : type === 'video' ? '.mp4' : type === 'audio' ? '.mp3' : type === 'voice' ? '.ogg' : '.bin');
+                    
+                    // Generate unique filename
+                    const filename = `${type}-${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+                    const filePath = path.join(__dirname, 'uploads', filename);
+                    
+                    // Save file to disk
+                    const fs = require('fs');
+                    fs.writeFileSync(filePath, mediaBuffer);
+                    
+                    // Store relative URL for database
+                    mediaUrl = `/uploads/${filename}`;
+                    mediaType = type;
+                    
+                    // Set message body to indicate media
+                    incomingMessage = text || `[${type.charAt(0).toUpperCase() + type.slice(1)}]`;
+                    
+                    console.log(`Media saved: ${filePath}, size: ${mediaBuffer.length} bytes`);
+                } catch (mediaErr) {
+                    console.error('Failed to download/save media:', mediaErr);
+                    incomingMessage = `[${type} - download failed]`;
                 }
             }
+            
+            // Log the message (with media info if applicable)
+            await logMessage(user.id, 'user', incomingMessage, mediaUrl, mediaType);
+            
+            // For media-only messages, send a simple acknowledgment
+            // For text messages, process through LLM as before
+            let finalResponse = "";
+            
+            if (mediaType && !text) {
+                // Media without text - acknowledge receipt
+                finalResponse = "Thank you for sharing that with me. How can I assist you today?";
+            } else {
+                // Process text message through existing logic
+                // 1. Check if user is in an active Flow
+                let flowResult = null;
+                if (user.active_flow) {
+                    flowResult = handleFlowEngine(user, incomingMessage);
+                }
+
+                if (flowResult) {
+                    finalResponse = flowResult.nextMessage;
+                    if (flowResult.clearFlow) {
+                        await pool.query("UPDATE users SET active_flow = NULL WHERE id = $1", [user.id]);
+                    }
+                } else {
+                    // 2. Classify intent if no active flow handled it
+                    const intent = await classifyIntent(incomingMessage);
+                    
+                    if (intent.includes("EMERGENCY") || incomingMessage.toLowerCase().includes("emergency")) {
+                        finalResponse = "This sounds like a critical situation. I am immediately alerting the clinician team. Please seek physical emergency care immediately.";
+                        await triggerEscalation(user.id, `Emergency triggered by user message: ${incomingMessage}`);
+                    } else {
+                        // 3. Free-Form Query -> LLM
+                        const llmResponse = await generateResponse(`User phone: ${phoneNumber}`, incomingMessage);
+                        
+                        // 4. Safety Post-Processing
+                        const safetyResult = checkSafety(llmResponse);
+
+                        if (!safetyResult.safe) {
+                            finalResponse = safetyResult.fallbackMessage;
+                            await triggerEscalation(user.id, safetyResult.escalationReason);
+                        } else {
+                            finalResponse = llmResponse;
+                        }
+                    }
+                }
+            }
+
+            await logMessage(user.id, 'agent', finalResponse);
+            
+            // Send reply via WATI API (async, not in HTTP response)
+            await watiClient.sendSessionMessage(waId, finalResponse);
+            
+        } catch (err) {
+            console.error('Error processing webhook:', err);
+            // Try to send error message to user
+            try {
+                await watiClient.sendSessionMessage(waId, "I'm sorry, I encountered an error. Let me escalate this for later review.");
+            } catch (sendErr) {
+                console.error('Failed to send error message:', sendErr);
+            }
         }
-
-        await logMessage(user.id, 'agent', finalResponse);
-        twiml.message(finalResponse);
-
-        res.type('text/xml').send(twiml.toString());
     } catch (err) {
-        console.error(err);
-        twiml.message("I'm sorry, I encountered an error. Let me escalate this for later review.");
-        res.type('text/xml').send(twiml.toString());
+        console.error('Webhook handler error:', err);
+        // Still return 200 to avoid retry storms
+        if (!res.headersSent) {
+            res.status(200).json({ success: false, error: 'Internal error' });
+        }
     }
 });
 
@@ -186,17 +266,16 @@ app.post('/api/users/:id/messages', async (req, res) => {
             [userId, 'admin', message.trim()]
         );
         
-        // Send via Twilio WhatsApp
+        // Send via WATI WhatsApp
         try {
-            if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-                await client.messages.create({
-                    body: message.trim(),
-                    from: process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886',
-                    to: user.phone_number
-                });
+            if (watiClient.isConfigured()) {
+                const waId = toWaId(user.phone_number);
+                await watiClient.sendSessionMessage(waId, message.trim());
+            } else {
+                console.warn('WATI client not configured - message saved to DB but not sent');
             }
-        } catch (twilioErr) {
-            console.error('Twilio error (message saved to DB but not sent):', twilioErr);
+        } catch (watiErr) {
+            console.error('WATI error (message saved to DB but not sent):', watiErr);
             // Continue even if WhatsApp sending fails - message is saved in DB
         }
         
@@ -225,29 +304,31 @@ app.post('/api/users/:id/video', upload.single('video'), async (req, res) => {
         
         const user = userResult.rows[0];
         
-        // Build public URL for the video - use PUBLIC_URL from env or fallback to request host
-        const baseUrl = process.env.PUBLIC_URL || `${req.protocol}://${req.get('host')}`;
-        const videoUrl = `${baseUrl}/uploads/${req.file.filename}`;
+        // Store relative URL for database
+        const videoUrl = `/uploads/${req.file.filename}`;
         
         // Log the message in database with video info
         const messageBody = caption ? `[Video] ${caption}` : '[Video]';
         const messageResult = await pool.query(
-            'INSERT INTO messages (user_id, sender, body) VALUES ($1, $2, $3) RETURNING *',
-            [userId, 'admin', messageBody]
+            'INSERT INTO messages (user_id, sender, body, media_url, media_type) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+            [userId, 'admin', messageBody, videoUrl, 'video']
         );
         
-        // Send via Twilio WhatsApp with video
+        // Send via WATI WhatsApp with video
         try {
-            if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
-                await client.messages.create({
-                    body: caption || 'Video message',
-                    mediaUrl: [videoUrl],
-                    from: process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886',
-                    to: user.phone_number
-                });
+            if (watiClient.isConfigured()) {
+                const waId = toWaId(user.phone_number);
+                await watiClient.sendSessionFile(
+                    waId,
+                    req.file.path,
+                    caption || 'Video message',
+                    req.file.mimetype
+                );
+            } else {
+                console.warn('WATI client not configured - video saved to DB but not sent');
             }
-        } catch (twilioErr) {
-            console.error('Twilio error sending video:', twilioErr);
+        } catch (watiErr) {
+            console.error('WATI error sending video:', watiErr);
             // Continue even if WhatsApp sending fails - message is saved in DB
         }
         

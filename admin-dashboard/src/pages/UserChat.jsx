@@ -67,7 +67,7 @@ export default function UserChat() {
   const handleVideoSelect = (e) => {
     const file = e.target.files[0];
     if (file) {
-      // Check file size (max 16MB for Twilio)
+      // Check file size (max 16MB for WhatsApp)
       if (file.size > 16 * 1024 * 1024) {
         alert('Video file must be smaller than 16MB');
         return;
@@ -101,7 +101,72 @@ export default function UserChat() {
           {messages.map(msg => (
             <div key={msg.id} className={`message-bubble ${msg.sender}`}>
               <strong>{msg.sender === 'agent' ? 'Health Agent' : msg.sender === 'admin' ? 'Admin' : 'Member'}</strong><br/>
+              
+              {/* Render media if present */}
+              {msg.media_url && msg.media_type && (
+                <div style={{marginTop: '0.5rem', marginBottom: '0.5rem'}}>
+                  {msg.media_type === 'video' && (
+                    <video 
+                      src={API_BASE_URL + msg.media_url} 
+                      controls
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '300px',
+                        borderRadius: '8px',
+                        backgroundColor: '#000'
+                      }}
+                    />
+                  )}
+                  {msg.media_type === 'image' && (
+                    <img 
+                      src={API_BASE_URL + msg.media_url} 
+                      alt="Shared image"
+                      style={{
+                        maxWidth: '100%',
+                        maxHeight: '300px',
+                        borderRadius: '8px',
+                        objectFit: 'contain'
+                      }}
+                    />
+                  )}
+                  {msg.media_type === 'audio' && (
+                    <audio 
+                      src={API_BASE_URL + msg.media_url} 
+                      controls
+                      style={{
+                        maxWidth: '100%'
+                      }}
+                    />
+                  )}
+                  {msg.media_type === 'voice' && (
+                    <audio 
+                      src={API_BASE_URL + msg.media_url} 
+                      controls
+                      style={{
+                        maxWidth: '100%'
+                      }}
+                    />
+                  )}
+                  {(msg.media_type === 'document' || msg.media_type === 'sticker') && (
+                    <a 
+                      href={API_BASE_URL + msg.media_url}
+                      download
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      style={{
+                        color: 'var(--primary-color)',
+                        textDecoration: 'underline'
+                      }}
+                    >
+                      Download {msg.media_type}
+                    </a>
+                  )}
+                </div>
+              )}
+              
+              {/* Render text body */}
               {msg.body}
+              
               <div style={{fontSize: '0.7rem', opacity: 0.7, marginTop: '0.25rem'}}>
                   {new Date(msg.created_at).toLocaleTimeString()}
               </div>

@@ -22,6 +22,8 @@ const initDB = async () => {
       user_id INTEGER REFERENCES users(id),
       sender VARCHAR(20),
       body TEXT,
+      media_url TEXT,
+      media_type VARCHAR(20),
       created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
   `;
@@ -40,6 +42,14 @@ const initDB = async () => {
     await pool.query(createUserTable);
     await pool.query(createLogsTable);
     await pool.query(createEscalationsTable);
+    
+    // Migration: Add media columns if they don't exist
+    await pool.query(`
+      ALTER TABLE messages 
+      ADD COLUMN IF NOT EXISTS media_url TEXT,
+      ADD COLUMN IF NOT EXISTS media_type VARCHAR(20);
+    `);
+    
     console.log('Database initialized successfully.');
   } catch (error) {
     console.error('Error initializing database:', error);
