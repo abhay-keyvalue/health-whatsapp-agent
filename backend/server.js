@@ -12,7 +12,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.json());
 
 // Initialize Twilio client
-// const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
 
 async function getUser(phoneNumber) {
   const res = await pool.query('SELECT * FROM users WHERE phone_number = $1', [phoneNumber]);
@@ -126,6 +126,51 @@ app.get('/api/users/:id/messages', async (req, res) => {
         const result = await pool.query('SELECT * FROM messages WHERE user_id = $1 ORDER BY created_at ASC', [req.params.id]);
         res.json(result.rows);
     } catch (e) {
+        res.status(500).json({error: "Server Error"});
+    }
+});
+
+// Send message from admin to user
+app.post('/api/users/:id/messages', async (req, res) => {
+    try {
+        const userId = req.params.id;
+        const { message } = req.body;
+        
+        if (!message || !message.trim()) {
+            return res.status(400).json({error: "Message is required"});
+        }
+
+        // Get user info
+        const userResult = await pool.query('SELECT * FROM users WHERE id = $1', [userId]);
+        if (userResult.rows.length === 0) {
+            return res.status(404).json({error: "User not found"});
+        }
+        
+        const user = userResult.rows[0];
+        
+        // Log the message in database
+        const messageResult = await pool.query(
+            'INSERT INTO messages (user_id, sender, body) VALUES ($1, $2, $3) RETURNING *',
+            [userId, 'admin', message.trim()]
+        );
+        
+        // Send via Twilio WhatsApp
+        try {
+            if (process.env.TWILIO_ACCOUNT_SID && process.env.TWILIO_AUTH_TOKEN) {
+                await client.messages.create({
+                    body: message.trim(),
+                    from: process.env.TWILIO_WHATSAPP_NUMBER || 'whatsapp:+14155238886',
+                    to: user.phone_number
+                });
+            }
+        } catch (twilioErr) {
+            console.error('Twilio error (message saved to DB but not sent):', twilioErr);
+            // Continue even if WhatsApp sending fails - message is saved in DB
+        }
+        
+        res.json(messageResult.rows[0]);
+    } catch (e) {
+        console.error('Error sending message:', e);
         res.status(500).json({error: "Server Error"});
     }
 });

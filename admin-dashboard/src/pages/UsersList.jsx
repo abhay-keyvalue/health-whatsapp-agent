@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Link } from 'react-router-dom';
 import axios from 'axios';
+import { API_BASE_URL } from '../config';
 
 export default function UsersList() {
   const [users, setUsers] = useState([]);
@@ -8,7 +9,7 @@ export default function UsersList() {
   useEffect(() => {
     const fetchUsers = async () => {
       try {
-        const res = await axios.get('http://localhost:3000/api/users');
+        const res = await axios.get(`${API_BASE_URL}/api/users`);
         setUsers(res.data);
       } catch (err) {
         console.error('Error fetching users:', err);

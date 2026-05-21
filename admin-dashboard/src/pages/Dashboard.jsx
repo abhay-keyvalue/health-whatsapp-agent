@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
 import { ShieldAlert, Users as UsersIcon, MessageCircle } from 'lucide-react';
+import { API_BASE_URL } from '../config';
 
 export default function Dashboard() {
   const [escalations, setEscalations] = useState([]);
@@ -10,8 +11,8 @@ export default function Dashboard() {
     const fetchData = async () => {
       try {
         const [escRes, usersRes] = await Promise.all([
-          axios.get('http://localhost:3000/api/escalations'),
-          axios.get('http://localhost:3000/api/users')
+          axios.get(`${API_BASE_URL}/api/escalations`),
+          axios.get(`${API_BASE_URL}/api/users`)
         ]);
         setEscalations(escRes.data);
         setStats(prev => ({ 
