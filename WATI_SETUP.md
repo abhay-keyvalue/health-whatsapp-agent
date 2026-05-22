@@ -152,6 +152,75 @@ WATI session messages only work within a 24-hour window after the user last mess
 - Check phone number format (digits only for WATI API)
 - Verify `channelPhoneNumber` matches your connected number
 
+## Step 8: Configure Admin Escalation Notifications
+
+The system can send WhatsApp notifications to an admin when critical escalations occur.
+
+### 1. Set Admin WhatsApp Number
+
+In your `backend/.env` file, add:
+
+```env
+ADMIN_WHATSAPP_NUMBER=919876543210
+```
+
+**Important:**
+- Use digits only (no `+` or spaces)
+- Include country code (e.g., `91` for India)
+- This should be a WhatsApp number that can receive messages
+
+### 2. Ensure Admin Session is Active
+
+For the admin to receive escalation notifications:
+- Admin must have sent at least one message to the WATI business number in the last 24 hours
+- This establishes an active session window
+- Consider sending a daily message from admin's WhatsApp to keep the session active
+
+### 3. What Triggers Escalation Notifications
+
+Escalations are triggered when:
+- User message contains "emergency" keyword
+- AI response contains safety keywords: "emergency", "suicide", "bleeding profusely", "can't breathe", "chest pain", "hospital"
+- Intent classifier detects emergency situation
+
+### 4. Notification Format
+
+Admin will receive a message like:
+
+```
+🚨 ESCALATION ALERT
+
+User: John Doe
+Phone: whatsapp:+919876543210
+Time: 22/05/2026, 11:30:45 AM
+
+Reason: Emergency triggered by user message: I have severe chest pain
+
+Please review this escalation in the admin dashboard.
+```
+
+### 5. Testing Escalation Notifications
+
+To test:
+
+1. Ensure `ADMIN_WHATSAPP_NUMBER` is set in `.env`
+2. Send a message from admin's WhatsApp to business number (to open session)
+3. From a user's WhatsApp, send a test message: "I have an emergency"
+4. Admin should receive the escalation notification within seconds
+5. Check backend logs for: `Escalation notification sent to admin: 919...`
+
+### Troubleshooting Escalations
+
+**Notification not received:**
+- Verify `ADMIN_WHATSAPP_NUMBER` is set correctly in `.env`
+- Ensure admin has active 24-hour session (send a message first)
+- Check backend logs for errors
+- Verify escalation was logged: `SELECT * FROM escalations ORDER BY created_at DESC;`
+
+**Multiple escalations:**
+- Each escalation sends a separate notification
+- Consider implementing rate limiting if needed
+
 ## Support Resources
 
 - WATI Documentation: [docs.wati.io](https://docs.wati.io)

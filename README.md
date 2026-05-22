@@ -16,6 +16,7 @@ The backend handles the WATI webhook, Postgres DB logic, Flow Engine, Grok integ
    - `WATI_API_TOKEN`
    - `WATI_TENANT_ID`
    - `WATI_CHANNEL_PHONE`
+   - `ADMIN_WHATSAPP_NUMBER` (Admin's WhatsApp number for escalation alerts - digits only with country code, e.g., 919876543210)
    - `GROK_API_KEY`
    - `DATABASE_URL` (Update this to point to a running postgres instance)
 4. Make sure PostgreSQL is running on your machine.
@@ -34,6 +35,11 @@ The backend handles the WATI webhook, Postgres DB logic, Flow Engine, Grok integ
 - **Media support**: The system handles text, images, videos, documents, and audio from users.
 - **Inbound media**: Downloaded from WATI and saved to `backend/uploads/`, visible in admin dashboard.
 - **Outbound media**: Uploaded directly to WATI (no PUBLIC_URL dependency for sending).
+- **Escalation Notifications**: When safety rules detect emergencies (keywords like "emergency", "chest pain", "can't breathe"), the system:
+  1. Logs the escalation to the database
+  2. Sends an immediate WhatsApp notification to the admin number configured in `ADMIN_WHATSAPP_NUMBER`
+  3. The notification includes user info, timestamp, and escalation reason
+  4. Admin must have an active 24-hour session with the WATI number to receive notifications
 
 ## 2. Admin Dashboard Setup
 

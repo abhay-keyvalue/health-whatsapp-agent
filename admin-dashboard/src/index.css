@@ -199,7 +199,7 @@ body {
 .chat-window {
   display: flex;
   flex-direction: column;
-  height: 600px;
+  height: 800px;
 }
 .chat-messages {
   flex: 1;
