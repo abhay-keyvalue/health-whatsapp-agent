@@ -38,20 +38,38 @@ class WATIClient {
      */
     async sendSessionMessage(waId, text) {
         try {
+            console.log(`[DEBUG] sendSessionMessage called with waId: ${waId}, text: "${text}", text length: ${text?.length}`);
+            
+            // WATI API format: POST /{tenantId}/api/v1/sendSessionMessage/{whatsappNumber}
+            // Body should be URL-encoded form data: messageText=...
             const endpoint = this.tenantId 
                 ? `/${this.tenantId}/api/v1/sendSessionMessage/${waId}`
                 : `/api/v1/sendSessionMessage/${waId}`;
             
-            const payload = {
-                messageText: text
-            };
-            
-            // Add channelPhoneNumber if configured (for multi-number accounts)
+            const params = {};
             if (this.channelPhone) {
-                payload.channelPhoneNumber = this.channelPhone;
+                params.channelNumber = this.channelPhone;
             }
             
-            const response = await this.client.post(endpoint, payload);
+            console.log(`[DEBUG] Full URL: ${this.baseURL}${endpoint}`);
+            console.log(`[DEBUG] Query params:`, params);
+            console.log(`[DEBUG] Body text:`, text);
+            
+            // Send as URL-encoded form data
+            const formData = new URLSearchParams();
+            formData.append('messageText', text);
+            
+            const response = await axios.post(
+                `${this.baseURL}${endpoint}`,
+                formData.toString(),
+                {
+                    headers: {
+                        'Authorization': `Bearer ${this.apiToken}`,
+                        'Content-Type': 'application/x-www-form-urlencoded'
+                    },
+                    params: params
+                }
+            );
             
             console.log(`WATI message sent to ${waId}: ${response.data?.whatsappMessageId || 'success'}`);
             console.log('WATI API full response:', JSON.stringify(response.data, null, 2)); // DEBUG

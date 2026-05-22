@@ -9,6 +9,15 @@ const { handleFlowEngine } = require('./flowEngine');
 const watiClient = require('./services/wati');
 const { toWaId, fromWaId } = require('./utils/phone');
 
+// Add process error handlers to prevent silent exits
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+    console.error('Uncaught Exception:', error);
+});
+
 const app = express();
 app.use(cors());
 app.use(express.urlencoded({ extended: true }));
@@ -172,7 +181,7 @@ app.post('/api/webhook', async (req, res) => {
                         await triggerEscalation(user.id, `Emergency triggered by user message: ${incomingMessage}`);
                     } else {
                         // 3. Free-Form Query -> LLM
-                        const llmResponse = await generateResponse(`User phone: ${phoneNumber}`, incomingMessage);
+                        const llmResponse = await generateResponse(user.id, incomingMessage);
                         
                         // 4. Safety Post-Processing
                         const safetyResult = checkSafety(llmResponse);
