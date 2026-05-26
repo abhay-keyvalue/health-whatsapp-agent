@@ -22,13 +22,17 @@ services:
         fromDatabase:
           name: health-db
           property: connectionString
-      - key: TWILIO_ACCOUNT_SID
+      - key: WATI_API_BASE_URL
         sync: false
-      - key: TWILIO_AUTH_TOKEN
+      - key: WATI_API_TOKEN
         sync: false
-      - key: TWILIO_WHATSAPP_NUMBER
+      - key: WATI_TENANT_ID
+        sync: false
+      - key: WATI_CHANNEL_PHONE
         sync: false
       - key: GROK_API_KEY
+        sync: false
+      - key: PUBLIC_URL
         sync: false
 
 databases:
